@@ -63,6 +63,7 @@ void* gecko_alloc_pages(uint32_t count) {
 }
 
 void gecko_free_pages(void* pages, uint32_t count) {
+    (void)count;
     if (pages != NULL) {
         vmm_free_kernel_memory(pages);
     }
