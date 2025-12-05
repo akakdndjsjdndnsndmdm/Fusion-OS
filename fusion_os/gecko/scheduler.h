@@ -1,10 +1,3 @@
-/*
- * scheduler.h - Round-robin scheduler with priority support
- * 
- * Implements a production-grade scheduler based on OSDev research
- * with task switching, time slicing, and multi-threading support.
- */
-
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
@@ -80,6 +73,7 @@ int scheduler_create_task(void (*function)(void), const char* name, uint8_t prio
 int scheduler_create_thread(void* stack, size_t stack_size, void (*function)(void));
 int scheduler_terminate_task(uint32_t task_id);
 void scheduler_yield(void);
+void scheduler_schedule(void);
 void scheduler_sleep(uint32_t milliseconds);
 
 /* scheduling control */
