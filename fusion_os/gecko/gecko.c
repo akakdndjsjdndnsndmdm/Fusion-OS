@@ -1,14 +1,27 @@
+#include "gecko.h"
+#include "pmm.h"
+#include "vmm.h"
+#include "scheduler.h"
+#include "ipc.h"
+#include "smp.h"
+#include "../common/logger.h"
+#include "../common/string.h"
+
+static int gecko_initialized = 0;
+
+static terminal_write_function_t terminal_write_func = NULL;
+static terminal_read_function_t terminal_read_func = NULL;
+
+int gecko_init(void) {
+    if (gecko_initialized) {
+        return 0;
+    }
     
-    /* initialize virtual memory manager */
+    logger_init();
+    pmm_init();
     vmm_init();
-    
-    /* initialize smp system */
     smp_init();
-    
-    /* initialize scheduler */
     scheduler_init();
-    
-    /* initialize ipc system */
     ipc_init();
     
     gecko_initialized = 1;
@@ -17,7 +30,6 @@
     return 0;
 }
 
-/* start scheduler and begin normal operation */
 void gecko_start_scheduler(void) {
     if (!gecko_initialized) {
         LOG_ERROR("gecko", "cannot start scheduler - gecko not initialized");
@@ -31,17 +43,13 @@ void gecko_start_scheduler(void) {
         return;
     }
     
-    /* enter main scheduler loop */
     for (;;) {
-        /* scheduler runs continuously, only yielding when tasks do */
-        /* this will never return in normal operation */
         __asm__ volatile ("hlt" ::: "memory");
     }
 }
 
-/* memory management interfaces */
 void* gecko_alloc_page(void) {
-    return vmm_alloc_kernel_memory(PAGE_SIZE);
+    return vmm_alloc_kernel_memory(4096);
 }
 
 void gecko_free_page(void* page) {
@@ -51,7 +59,7 @@ void gecko_free_page(void* page) {
 }
 
 void* gecko_alloc_pages(uint32_t count) {
-    return vmm_alloc_kernel_memory(count * PAGE_SIZE);
+    return vmm_alloc_kernel_memory(count * 4096);
 }
 
 void gecko_free_pages(void* pages, uint32_t count) {
@@ -75,10 +83,10 @@ int gecko_map_virtual_memory(void* virtual_addr, void* physical_addr, uint32_t f
     }
     
     uint32_t vmm_flags = 0;
-    if (flags & GECKO_MEMORY_READ) vmm_flags |= VMM_READ;
-    if (flags & GECKO_MEMORY_WRITE) vmm_flags |= VMM_WRITE;
-    if (flags & GECKO_MEMORY_EXEC) vmm_flags |= VMM_EXEC;
-    if (flags & GECKO_MEMORY_USER) vmm_flags |= VMM_USER;
+    if (flags & 1) vmm_flags |= 1;
+    if (flags & 2) vmm_flags |= 2;
+    if (flags & 4) vmm_flags |= 4;
+    if (flags & 8) vmm_flags |= 8;
     
     return vmm_map_page(kernel_space, virtual_addr, physical_addr, vmm_flags);
 }
@@ -90,9 +98,8 @@ void gecko_unmap_virtual_memory(void* virtual_addr) {
     }
 }
 
-/* scheduler interfaces */
 int gecko_create_task(task_function_t function, const char* name) {
-    return scheduler_create_task(function, name, PRIORITY_NORMAL);
+    return scheduler_create_task(function, name, 1);
 }
 
 int gecko_create_thread(void* stack, size_t stack_size, task_function_t function) {
@@ -115,18 +122,17 @@ uint8_t gecko_get_priority(int task_id) {
     return scheduler_get_priority(task_id);
 }
 
-/* inter-process communication */
 int gecko_send_message(void* destination, const char* message, uint32_t length) {
     if (message == NULL || length == 0) {
         return -1;
     }
     
-    if (length > GECKO_MAX_MESSAGE_SIZE) {
+    if (length > 1024) {
         LOG_WARNING("gecko", "message too large: %u bytes", length);
         return -1;
     }
     
-    return ipc_send_message(destination, message, length, IPC_MESSAGE_DATA, IPC_NONBLOCKING);
+    return ipc_send_message(destination, message, length, 1, 2);
 }
 
 int gecko_receive_message(void* source, char* buffer, uint32_t* length) {
@@ -150,7 +156,6 @@ void* gecko_lookup_service(const char* service_name) {
     return ipc_lookup_service(service_name);
 }
 
-/* terminal driver registration */
 int gecko_register_terminal_driver(terminal_write_function_t write_func, 
                                    terminal_read_function_t read_func) {
     if (write_func == NULL) {
@@ -172,9 +177,7 @@ terminal_read_function_t gecko_get_terminal_read(void) {
     return terminal_read_func;
 }
 
-/* system information */
 void gecko_get_system_info(void* info_buffer, size_t buffer_size) {
-    /* populate system information */
     struct {
         uint32_t memory_total;
         uint32_t memory_free;
@@ -193,19 +196,11 @@ void gecko_get_system_info(void* info_buffer, size_t buffer_size) {
 }
 
 uint64_t gecko_get_uptime(void) {
-    /* get system uptime from timer interrupt count */
-    static uint64_t last_update = 0;
     static uint64_t uptime = 0;
-    
-    /* check for timer interrupt and update uptime */
-    /* this would be updated by the timer interrupt handler */
-    /* but im too fucking lazy so, increment based on timer frequency */
-    uptime += 10; /* increment by 10ms tick */
-    
+    uptime += 10;
     return uptime;
 }
 
-/* debug logging functions */
 void gecko_log_debug(const char* subsystem, const char* message) {
     LOG_DEBUG(subsystem, "%s", message);
 }
