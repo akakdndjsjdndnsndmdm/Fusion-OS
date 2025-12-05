@@ -2,14 +2,14 @@
 
 # compiler and tools
 cc = gcc
-as = nasm
+as = as
 ld = ld
 objcopy = objcopy
 iso = grub-mkrescue
 
 # flags
 cflags = -m64 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib -std=c11 -Wall -Wextra
-asflags = -f elf64
+asflags = --64
 ldflags = -nostdlib -z noexecstack
 
 # directories
@@ -21,21 +21,17 @@ commondir = common
 
 # source files
 c_sources = $(shell find $(srcdir) -name "*.c" -not -path "$(bootdir)/*")
-asm_sources = $(shell find $(srcdir) -name "*.asm" -not -path "$(bootdir)/*")
+boot_asm = $(bootdir)/boot.asm
 
 # object files
 c_objects = $(c_sources:.c=.o)
-asm_objects = $(asm_sources:.asm=.o)
+boot_object = $(boot_asm:.asm=.o)
 
-# kernel
 kernel = build/fusion_os.elf
-
-# iso output
+kernel_bin = build/fusion_os.bin
 iso_output = build/fusion_os.iso
 
-# build all
-all: $(c_objects) $(kernel)
-# all: $(kernel) $(iso_output)  # temporarily disable iso creation
+all: $(c_objects) $(kernel) $(kernel_bin) $(iso_output)
 
 # compile c sources
 %.o: %.c
@@ -43,14 +39,17 @@ all: $(c_objects) $(kernel)
 	$(cc) $(cflags) -c $< -o $@
 
 # compile asm sources
-%.o: %.asm
+$(boot_object): $(boot_asm)
 	@mkdir -p $(dir $@)
 	$(as) $(asflags) $< -o $@
 
-# link kernel
-$(kernel): $(c_objects) linker.ld
+$(kernel): $(c_objects) $(boot_object) linker.ld
 	@mkdir -p $(dir $@)
-	$(ld) $(ldflags) -T linker.ld $(c_objects) -o $@
+	$(ld) $(ldflags) -T linker.ld $(boot_object) $(c_objects) -o $@
+
+$(kernel_bin): $(kernel)
+	@mkdir -p $(dir $@)
+	$(objcopy) -O binary $< $@
 
 # create iso
 $(iso_output): $(kernel) grub.cfg
@@ -59,9 +58,11 @@ $(iso_output): $(kernel) grub.cfg
 	cp grub.cfg $(dir $@)/boot/grub/
 	$(iso) -o $@ $(dir $@)
 
-# run in qemu
 qemu: $(kernel)
-	qemu-system-x86_64 -kernel $(kernel) -m 512M -smp 2
+	qemu-system-x86_64 -kernel $(kernel) -m 512M -smp 2 -membaudit
+
+qemu-cd: $(iso_output)
+	qemu-system-x86_64 -cdrom $(iso_output) -m 512M -smp 2 -membaudit
 
 # clean build artifacts
 clean:
@@ -74,14 +75,15 @@ install-tools:
 	@echo "installing build tools..."
 	apt-get update && apt-get install -y grub-common grub-pc-bin xorriso nasm
 
-# help
 help:
 	@echo "fusion os build system"
-	@echo "make all       - build kernel and iso"
+	@echo "make all       - build kernel, bin and iso"
 	@echo "make kernel    - build kernel only"
+	@echo "make bin       - build binary kernel"
 	@echo "make iso       - build iso only"
 	@echo "make qemu      - run in qemu"
+	@echo "make qemu-cd   - run in qemu from cdrom"
 	@echo "make clean     - clean build artifacts"
 	@echo "make install-tools - install required tools"
 
-.PHONY: all kernel iso qemu clean install-tools help
+.PHONY: all kernel bin iso qemu qemu-cd clean install-tools help
