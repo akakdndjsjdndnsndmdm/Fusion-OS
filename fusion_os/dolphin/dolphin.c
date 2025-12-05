@@ -141,7 +141,7 @@ int dolphin_create_process(void (*function)(void), const char* name) {
 }
 
 void dolphin_exit_process(void) {
-    /* implement process termination */
+    
     /* terminate current process and clean up resources */
     extern task_t* scheduler_get_current_task(void);
     task_t* current = scheduler_get_current_task();
